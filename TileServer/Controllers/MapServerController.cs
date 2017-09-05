@@ -11,7 +11,7 @@ using System.Text;
 namespace OAuthTest.Controllers
 {
 
-    [RoutePrefix("arcgis/rest/services/BaseMap")]
+    [RoutePrefix("arcgis/rest")]
     public class MapServerController : ApiController
     {
         // ref: http://127.0.0.1:8088/arcgis/rest/services/BaseMap/GaodeImageE/MapServer
@@ -20,13 +20,39 @@ namespace OAuthTest.Controllers
         public MapServerController()
         {
         }
-        
-        [HttpGet, Route("{tileName}/MapServer")]
+
+
+        [HttpGet, Route("info")]
+        public IHttpActionResult GetMapServerInfo()
+        {
+            // ref: http://docker7.gdepb.gov.cn/arcgis/rest/services/TileMap/ADMap/MapServer?f=pjson
+            //D:\Temp\BaseMap_Test\Layers
+
+
+            var mapJson = File.ReadAllText(System.Configuration.ConfigurationManager.AppSettings["mapjson"]);
+            if (Request.GetQueryNameValuePairs().Any(q => q.Key.Equals("callback", StringComparison.OrdinalIgnoreCase)))
+            {
+                var callback = Request.GetQueryNameValuePairs().First(
+                    q => q.Key.Equals("callback", StringComparison.OrdinalIgnoreCase)
+                );
+                mapJson = $"{callback.Value}({mapJson})";
+            }
+            var response = Request.CreateResponse(HttpStatusCode.OK);
+            var content = new StringContent(mapJson);
+            //      content.Headers..ContentEncoding = Encoding.UTF8;
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            response.Content = content;
+            return ResponseMessage(response);
+        }
+
+
+
+        [HttpGet, Route("services/TileMap/{tileName}/MapServer")]
         public IHttpActionResult GetTileMapLayerInfo(string tileName)
         {
-            // ref: http://docker7.gdepb.gov.cn/arcgis/rest/services/BaseMap/ADMap/MapServer?f=pjson
+            // ref: http://docker7.gdepb.gov.cn/arcgis/rest/services/TileMap/ADMap/MapServer?f=pjson
             //D:\Temp\BaseMap_Test\Layers
-            
+
 
             var mapJson = File.ReadAllText(System.Configuration.ConfigurationManager.AppSettings["mapjson"]);
             if (Request.GetQueryNameValuePairs().Any(q => q.Key.Equals("callback", StringComparison.OrdinalIgnoreCase))) {
@@ -43,12 +69,12 @@ namespace OAuthTest.Controllers
             return ResponseMessage(response);
         }
 
-        [HttpGet, Route("{tileName}/MapServer/tile/{level:int}/{row:int}/{col:int}")]
+        [HttpGet, Route("services/TileMap/{tileName}/MapServer/tile/{level:int}/{row:int}/{col:int}")]
         public IHttpActionResult GetTile(string tileName,int level, int row, int col)
         {
-            // ref: http://docker7.gdepb.gov.cn/arcgis/rest/services/BaseMap/ADMap/MapServer/tile/1/0/1
+            // ref: http://docker7.gdepb.gov.cn/arcgis/rest/services/TileMap/ADMap/MapServer/tile/1/0/1
 
-           var tilePath = string.Format(tilePathTemplate, tileName);
+            var tilePath = string.Format(tilePathTemplate, tileName);
 
             var response = Request.CreateResponse(HttpStatusCode.OK);
             var buff = getTile(tilePath,level, row, col);
