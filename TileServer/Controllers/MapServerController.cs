@@ -11,7 +11,7 @@ using Newtonsoft.Json.Linq;
 
 namespace TileServer.Controllers {
 
-    [RoutePrefix("arcgis/rest/services/basemap")]
+    [RoutePrefix("arcgis/rest/services/BaseMap")]
     public class MapServerController : ApiController {
 
         private readonly string cacheFolder;
