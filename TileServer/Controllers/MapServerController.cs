@@ -1,61 +1,102 @@
 ﻿using System;
-using System.Linq;
-using System.Web.Http;
-using System.Net.Http;
-using System.Net;
-using System.Threading.Tasks;
-using System.Net.Http.Headers;
+using System.Configuration;
 using System.IO;
-using System.Text;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Web.Http;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
-namespace OAuthTest.Controllers {
+namespace TileServer.Controllers {
 
-    [RoutePrefix("arcgis/rest/services/BaseMap")]
+    [RoutePrefix("arcgis/rest/services/basemap")]
     public class MapServerController : ApiController {
 
-        // ref: http://127.0.0.1:8088/arcgis/rest/services/BaseMap/GaodeImageE/MapServer
-        private string tilePathTemplate = "E:\\MapDown\\{0}\\Layers\\_alllayers";
+        private readonly string cacheFolder;
+        private readonly string mapInfoFile;
 
-        [HttpGet, Route("{tileName}/MapServer")]
-        public IHttpActionResult GetTileMapLayerInfo(string tileName) {
-            // ref: http://docker7.gdepb.gov.cn/arcgis/rest/services/BaseMap/ADMap/MapServer?f=pjson
-            //D:\Temp\BaseMap_Test\Layers
-            var mapJson = File.ReadAllText(System.Configuration.ConfigurationManager.AppSettings["mapjson"]);
-            if (Request.GetQueryNameValuePairs().Any(q => q.Key.Equals("callback", StringComparison.OrdinalIgnoreCase))) {
-                var callback = Request.GetQueryNameValuePairs().First(
-                    q => q.Key.Equals("callback", StringComparison.OrdinalIgnoreCase)
+        public MapServerController() {
+            cacheFolder = ConfigurationManager.AppSettings["cacheFolder"];
+            if (string.IsNullOrEmpty(cacheFolder)) {
+                throw new InvalidOperationException(
+                    "cacheFolder not found in appSettings"
                 );
-                mapJson = $"{callback.Value}({mapJson})";
             }
-            var response = Request.CreateResponse(HttpStatusCode.OK);
-            var content = new StringContent(mapJson);
-            //      content.Headers..ContentEncoding = Encoding.UTF8;
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            response.Content = content;
-            return ResponseMessage(response);
+            if (!Directory.Exists(cacheFolder)) {
+                throw new DirectoryNotFoundException(
+                    $"cache Folder {cacheFolder} does not exist!"
+                );
+            }
+            mapInfoFile = ConfigurationManager.AppSettings["mapInfoFile"];
+            if (string.IsNullOrEmpty(mapInfoFile)) {
+                throw new InvalidOperationException(
+                    "mapInfo not found in appSettings"
+                );
+            }
+            if (!File.Exists(mapInfoFile)) {
+                throw new FileNotFoundException(
+                    $"map info file {mapInfoFile} does not exists!"
+                );
+            }
         }
 
-        [HttpGet, Route("{tileName}/MapServer/tile/{level:int}/{row:int}/{col:int}")]
-        public IHttpActionResult GetTile(string tileName, int level, int row, int col) {
-            // ref: http://docker7.gdepb.gov.cn/arcgis/rest/services/BaseMap/ADMap/MapServer/tile/1/0/1
-            var tilePath = string.Format(tilePathTemplate, tileName);
-            var response = Request.CreateResponse(HttpStatusCode.OK);
-            var buff = GetTileContent(tilePath, level, row, col);
-            var content = new ByteArrayContent(buff);
-            content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
-            response.Content = content;
-            return ResponseMessage(response);
+        // GET: arcgis/rest/services/{tileName}/MapServer?f=pjson
+        [HttpGet, Route("{mapName}/MapServer")]
+        public IHttpActionResult GetTileMapLayerInfo(string mapName) {
+            try {
+                var text = File.ReadAllText(mapInfoFile);
+                var json = JsonConvert.DeserializeObject<JObject>(text);
+                json["mapName"] = mapName;
+                text = json.ToString();
+                if (Request.GetQueryNameValuePairs().Any(q => q.Key.Equals("callback", StringComparison.OrdinalIgnoreCase))) {
+                    var callback = Request.GetQueryNameValuePairs().First(
+                        q => q.Key.Equals("callback", StringComparison.OrdinalIgnoreCase)
+                    );
+                    text = $"{callback.Value}({text})";
+                }
+                var response = Request.CreateResponse(HttpStatusCode.OK);
+                var content = new StringContent(text);
+                //content.Headers.ContentEncoding.Add("utf-8");
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                response.Content = content;
+                return ResponseMessage(response);
+            }
+            catch (Exception ex) {
+                return InternalServerError(ex);
+            }
         }
 
-        private byte[] GetTileContent(string tilePath, int lev, int r, int c) {
+        // GET: arcgis/rest/services/BaseMap/ADMap/MapServer/tile/1/0/1
+        [HttpGet, Route("{mapName}/MapServer/tile/{level:int}/{row:int}/{col:int}")]
+        public IHttpActionResult GetTile(string mapName, int level, int row, int col) {
+            try {
+                var tilePath = Path.Combine(cacheFolder, "BaseMap_" + mapName, "Layers", "_alllayers");
+                var buff = GetTileContent(tilePath, level, row, col);
+                if (buff.Length == 0) {
+                    return NotFound();
+                }
+                var content = new ByteArrayContent(buff);
+                content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                var response = Request.CreateResponse(HttpStatusCode.OK);
+                response.Content = content;
+                return ResponseMessage(response);
+            }
+            catch (Exception ex) {
+                return InternalServerError(ex);
+            }
+        }
+
+        private static byte[] GetTileContent(string tilePath, int lev, int r, int c) {
             int rowGroup = 128 * (r / 128);
             int colGroup = 128 * (c / 128);
             // try get from bundle
             // string.Format("{0}\\L{1:D2}\\R{2:X4}C{3:X4}.{4}", tilePath, lev, rowGroup, colGroup, "bundle");
             var bundleFileName = Path.Combine(
                 tilePath,
-                lev.ToString("D2"),
-                string.Format("R{0:X4}C{1:X4}.bundle", rowGroup, colGroup)
+                $"L{lev:D2}",
+                $"R{rowGroup:X4}C{colGroup:X4}.bundle"
             );
             int index = 128 * (r - rowGroup) + (c - colGroup);
             if (File.Exists(bundleFileName)) {
