@@ -1,11 +1,8 @@
 ﻿using System;
-using System.Configuration;
 using System.IO;
 using System.Web.Http;
-using Beginor.Owin.Security.Aes;
-using Beginor.Owin.Security.Gdep;
+using System.Web.Http.Cors;
 using Beginor.Owin.StaticFile;
-using Microsoft.Owin.Security.DataProtection;
 using Owin;
 
 namespace OAuthTest {
@@ -27,6 +24,8 @@ namespace OAuthTest {
             var json = config.Formatters.JsonFormatter;
             json.Indent = true;
             json.UseDataContractJsonSerializer = false;
+            // enable cors
+            ConfigWebApiCors(config);
             // web api routes
             config.MapHttpAttributeRoutes();
             config.Routes.MapHttpRoute(
@@ -36,23 +35,15 @@ namespace OAuthTest {
             app.UseWebApi(config);
         }
 
-        private static void ConfigOauth(IAppBuilder app) {
-            // config auth
-            var provider = new AesDataProtectionProvider("/OAuthTest");
-            app.SetDataProtectionProvider(provider);
-            //app.CreatePerOwinContext<IAuthenticationManager>((IdentityFactoryOptions<IAuthenticationManager> options, IOwinContext context) => {
-            //    return null;
-            //};);
-            app.UseExternalSignInCookie();
-            var appSettings = ConfigurationManager.AppSettings;
-            // oauth
-            var oauthOptions = new GdepAuthenticationOptions() {
-                Caption = appSettings["oauth-caption"],
-                AppId = appSettings["oauth-id"],
-                AppSecret = appSettings["oauth-secret"],
-                Scope = appSettings["oauth-scope"].Split(',')
+        private static void ConfigWebApiCors(HttpConfiguration config) {
+            var policy = new EnableCorsAttribute(
+                origins: "*",
+                headers: "*",
+                methods: "*"
+            ) {
+                SupportsCredentials = true
             };
-            app.UseGdepAuthentication(oauthOptions);
+            config.EnableCors(policy);
         }
 
         private static void ConfigStaticFile(IAppBuilder app) {
